@@ -1,0 +1,12 @@
+{:paths ["src"]
+ ;; libjoltc and the shim are built by `jolt native` (native/build.sh, which
+ ;; fetches joltc at a pinned commit; nothing third-party is committed here)
+ ;; and loaded at run time by joltc.core from native/lib, not declared under
+ ;; :jolt/native, so a project without the build still loads and
+ ;; `joltc.core/available?` says whether physics will work.
+ :aliases {:test {:extra-paths ["test"]}
+           ;; regenerate the bindings from the checkout the build made
+           :gen {:extra-deps {jlt-commons/native-gen {:local/root "../native-gen"}}
+                 :main-opts ["-m" "native-gen.main" "gen/manifest.edn"]}}
+ :tasks {native "sh native/build.sh"
+         test "jolt -A:test -e \"(require 'joltc.layout-test 'clojure.test) (clojure.test/run-tests 'joltc.layout-test)\""}}

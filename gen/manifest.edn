@@ -1,0 +1,21 @@
+{;; native-gen manifest for the joltc raw bindings. Regenerate with `jolt -M:gen`
+ ;; from the joltc directory after native/build.sh has fetched joltc.
+ :headers ["joltc.h"]
+ :include-dirs {:darwin ["native/joltc/include"]
+                :linux ["native/joltc/include"]
+                :windows ["native/joltc/include"]}
+ :source-label "joltc 886e088 (Jolt 5.6.0)"
+ :file-filter "joltc.h"
+ :skip-headers #{}
+ :ns-prefix "joltc"
+ ;; one header, so its namespace is named outright rather than derived
+ :ns-names {"joltc.h" "joltc.ffi"}
+ :out-dir "src"
+ :test-out "test"
+ :test-ns "joltc.layout-test"
+ :layouts-out "layouts.edn"
+ :report-out "report.edn"
+ :work-dir "work"
+ :macro-prefixes ["JPH_"]
+ :macro-exclude #{"JPH_CAPI" "JPH_API_CALL" "JPH_DOUBLE_PRECISION"}
+ :blocking #{}}

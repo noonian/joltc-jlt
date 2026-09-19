@@ -16,6 +16,13 @@ if [ ! -d joltc/.git ]; then
   (cd joltc && git remote add origin "$JOLTC_REPO" && git fetch -q --depth 1 origin "$JOLTC_SHA" && git checkout -q FETCH_HEAD)
 fi
 
+# a checkout that moved keeps a CMake cache configured for its old path;
+# start the build directory over rather than let cmake refuse it
+if [ -f joltc/build/CMakeCache.txt ] && ! grep -q "CMAKE_HOME_DIRECTORY:INTERNAL=$PWD/joltc\$" joltc/build/CMakeCache.txt; then
+  echo "the build directory was configured elsewhere; starting it over"
+  rm -rf joltc/build
+fi
+
 cmake -S joltc -B joltc/build -DCMAKE_BUILD_TYPE=Release \
   -DJPH_BUILD_SHARED=ON -DJPH_SAMPLES=OFF -DJPH_TESTS=OFF \
   -DUSE_ASSERTS=OFF -DGENERATE_DEBUG_SYMBOLS=OFF > /dev/null

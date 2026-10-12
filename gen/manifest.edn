@@ -5,6 +5,9 @@
                 :linux ["native/joltc/include"]
                 :windows ["native/joltc/include"]}
  :source-label "joltc 886e088 (Jolt 5.6.0)"
+ ;; joltc.h needs no system header, so the other targets are extracted from
+ ;; whichever machine regenerates; `jolt -M:gen --check` on each confirms them
+ :targets ["linux-x86_64" "windows-x86_64"]
  :file-filter "joltc.h"
  :skip-headers #{}
  :ns-prefix "joltc"
@@ -13,7 +16,6 @@
  :out-dir "src"
  :test-out "test"
  :test-ns "joltc.layout-test"
- :layouts-out "layouts.edn"
  :report-out "report.edn"
  :work-dir "work"
  :macro-prefixes ["JPH_"]

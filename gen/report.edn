@@ -1,4 +1,10 @@
-{:os :darwin,
+{:targets
+ {"darwin-arm64"
+  {:cross? false, :source-label "joltc 886e088 (Jolt 5.6.0)"},
+  "linux-x86_64"
+  {:cross? true, :source-label "joltc 886e088 (Jolt 5.6.0)"},
+  "windows-x86_64"
+  {:cross? true, :source-label "joltc 886e088 (Jolt 5.6.0)"}},
  :namespaces
  [{:ns joltc.ffi,
    :counts
@@ -7,11 +13,16 @@
     :enums 30,
     :constants 9,
     :callbacks 3}}],
+ :divergent {},
  :skipped-functions {},
+ :skipped-records {},
+ :skipped-callbacks {},
+ :skipped-variables {},
+ :skipped-macros {},
  :pruned-macros {},
  :skipped-names {},
  :opaque-records
- ("JPH_Body"
+ ["JPH_Body"
   "JPH_BodyActivationListener"
   "JPH_BodyCreationSettings"
   "JPH_BodyDrawFilter"
@@ -129,4 +140,4 @@
   "JPH_WheelTV"
   "JPH_WheelWV"
   "JPH_WheeledVehicleController"
-  "JPH_WheeledVehicleControllerSettings")}
+  "JPH_WheeledVehicleControllerSettings"]}

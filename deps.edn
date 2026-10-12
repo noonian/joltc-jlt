@@ -7,6 +7,6 @@
  :aliases {:test {:extra-paths ["test"]}
            ;; regenerate the bindings from the checkout the build made
            :gen {:extra-deps {jlt-commons/native-gen {:local/root "../native-gen"}}
-                 :main-opts ["-m" "native-gen.main" "gen/manifest.edn"]}}
+                 :main-opts ["-m" "noonian.jolt.native-gen.main" "gen/manifest.edn"]}}
  :tasks {native "sh native/build.sh"
          test "jolt -A:test -e \"(require 'joltc.layout-test 'clojure.test) (clojure.test/run-tests 'joltc.layout-test)\""}}

@@ -21,7 +21,7 @@ build and `(joltc.core/available?)` says whether physics will work;
 ```sh
 jolt native      # git, cmake and a C++ compiler; a few minutes the first time
 jolt test        # the layout test against the C compiler
-jolt -M:gen      # regenerate src/joltc/ffi.jolt and gen/layouts.edn from the checkout
+jolt -M:gen      # regenerate src/joltc/ffi.jolt and gen/targets/ from the checkout
 ```
 
 Depend on it by `:local/root` from a checkout beside your project, or by

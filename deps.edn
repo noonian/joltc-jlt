@@ -6,7 +6,7 @@
  ;; `joltc.core/available?` says whether physics will work.
  :aliases {:test {:extra-paths ["test"]}
            ;; regenerate the bindings from the checkout the build made
-           :gen {:extra-deps {jlt-commons/jolt-bindgen {:local/root "../native-gen"}}
+           :gen {:extra-deps {io.github.noonian/jolt-bindgen {:git/sha "d59eefe0286979979e11d83d6becff78af95c298"}}
                  :main-opts ["-m" "noonian.jolt.bindgen.main" "gen/manifest.edn"]}}
  :tasks {native "sh native/build.sh"
          test "jolt -A:test -e \"(require 'joltc.layout-test 'clojure.test) (clojure.test/run-tests 'joltc.layout-test)\""}}

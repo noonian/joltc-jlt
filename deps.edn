@@ -1,4 +1,8 @@
 {:paths ["src"]
+ ;; the oldest jolt runtime this works on: 0.8.4 is where a dependency's
+ ;; relative :jolt/native path began to resolve against its own deps.edn,
+ ;; which is how a project that depends on this one finds the libraries
+ :jolt/min-version "0.8.4"
  ;; libjoltc and the shim are built by `jolt native` (native/build.sh, which
  ;; fetches joltc at a pinned commit; nothing third-party is committed here).
  ;; The paths are relative to this file, for a project that depends on this

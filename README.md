@@ -63,22 +63,30 @@ it loads.
 
 ## Using it
 
-```clojure
-;; deps.edn
-{:deps {io.github.noonian/joltc-jlt {:git/sha "<commit sha>"}}}
+**Clone it and build it yourself.** There is no other practical way to
+consume this library today. It is not just source: it works only after
+its native build has run, and the runtime has no prep step that would run
+a dependency's build for you. So the way to depend on it is a checkout of
+your own, built once, and named by path:
+
+```sh
+git clone https://github.com/noonian/joltc-jlt
+cd joltc-jlt && jolt native
 ```
 
-or `{:local/root "../joltc-jlt"}` for a checkout beside your project.
+```clojure
+;; your project's deps.edn, with the checkout beside it
+{:deps {io.github.noonian/joltc-jlt {:local/root "../joltc-jlt"}}}
+```
 
-The runtime has no prep step for dependencies, so the native build is
-yours to run once, in the checkout the dependency resolves to:
-
-- With `:local/root`, run `jolt native` in that checkout.
-- With a git dependency the checkout is in the runtime's cache: `jolt path`
-  in your project prints it
-  (`~/.jolt/gitlibs/https___github.com_noonian_joltc-jlt.git/<sha>/src`).
-  Run `jolt native` in the directory above that `src`. It is per sha, so a
-  new pin is a new build.
+A git dependency (`{:git/sha "<commit sha>"}`) does resolve, and your
+project starts, but with `(joltc.core/available?)` false: the runtime
+fetched the source into its cache and nothing built it. You can build it
+there (`jolt path` in your project prints the checkout, under
+`~/.jolt/gitlibs/`, and `jolt native` in the directory above its `src`
+does the build), but that is a build inside a cache, once per pinned sha
+and again on every machine. A checkout of your own is the honest
+arrangement until the runtime can build a dependency's natives.
 
 ### How the libraries are found
 
@@ -97,7 +105,9 @@ by path relative to itself:
 The runtime resolves those paths against the `deps.edn` that wrote them,
 so they hold for a project that depends on this one, and it loads the
 libraries at startup, before any namespace, so there is no loader to
-call. Needs the jolt runtime at 0.8.4 or later.
+call. That needs the jolt runtime at 0.8.4 or later, which `deps.edn`
+declares as `:jolt/min-version`, so an older runtime refuses to load the
+project instead of failing to find the libraries.
 
 - **They are `:optional`.** A project that depends on this one starts
   without the build, and `(joltc.core/available?)` says whether physics

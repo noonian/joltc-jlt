@@ -1,4 +1,4 @@
-{;; native-gen manifest for the joltc raw bindings. Regenerate with `jolt -M:gen`
+{;; jolt-bindgen manifest for the joltc raw bindings. Regenerate with `jolt -M:gen`
  ;; from the joltc directory after native/build.sh has fetched joltc.
  :headers ["joltc.h"]
  :include-dirs {:darwin ["native/joltc/include"]

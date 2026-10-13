@@ -1,16 +1,16 @@
 #!/bin/sh
-# Build the Jolt Physics C wrapper (joltc, which fetches Jolt itself) and
+# Build the Jolt Physics C wrapper (joltc, which fetches the engine itself) and
 # the joltc shim into native/lib. Needs git, cmake and a C/C++ compiler
 # (CC picks the one that compiles the shim; cmake finds its own). macOS and
 # Linux: the shim uses pthreads and this script is POSIX sh.
-# The libraries are loaded at run time by joltc.core, so nothing else in
+# deps.edn declares the libraries as optional natives, so nothing else in
 # the workspace depends on this having run. Takes a few minutes the first
 # time; the joltc checkout and build directory are kept for rebuilds.
 set -e
 cd "$(dirname "$0")"
 
 JOLTC_REPO="${JOLTC_REPO:-https://github.com/amerkoleci/joltc.git}"
-JOLTC_SHA="${JOLTC_SHA:-886e088675bae3a086f8318c7803f8ee962c2f2c}"   # 2026-07-13, Jolt 5.6.0
+JOLTC_SHA="${JOLTC_SHA:-886e088675bae3a086f8318c7803f8ee962c2f2c}"   # 2026-07-13, Jolt Physics 5.6.0
 
 if [ ! -d joltc/.git ]; then
   echo "fetching joltc $JOLTC_SHA"

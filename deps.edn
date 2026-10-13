@@ -1,9 +1,17 @@
 {:paths ["src"]
  ;; libjoltc and the shim are built by `jolt native` (native/build.sh, which
- ;; fetches joltc at a pinned commit; nothing third-party is committed here)
- ;; and loaded at run time by joltc.core from native/lib, not declared under
- ;; :jolt/native, so a project without the build still loads and
- ;; `joltc.core/available?` says whether physics will work.
+ ;; fetches joltc at a pinned commit; nothing third-party is committed here).
+ ;; The paths are relative to this file, for a project that depends on this
+ ;; one too. :optional, so a project without the build still loads and
+ ;; `joltc.core/available?` says whether physics will work. No :windows
+ ;; candidates: the build does not make them, and without the key the
+ ;; platform's own search for joltc.dll and joltc_shim.dll is what is tried.
+ :jolt/native [{:name "joltc" :optional true
+                :darwin ["native/lib/libjoltc.dylib"]
+                :linux ["native/lib/libjoltc.so"]}
+               {:name "joltc_shim" :optional true
+                :darwin ["native/lib/libjoltc_shim.dylib"]
+                :linux ["native/lib/libjoltc_shim.so"]}]
  :aliases {:test {:extra-paths ["test"]}
            :examples {:extra-paths ["examples"]}
            ;; regenerate the bindings from the checkout the build made

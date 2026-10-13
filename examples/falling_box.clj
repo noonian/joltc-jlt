@@ -1,5 +1,5 @@
 (ns falling-box
-  "A box dropped on a floor: the least that makes a Jolt world through
+  "A box dropped on a floor: the least that makes a Jolt Physics world through
   `joltc.ffi`, with the shim reading the transforms and the contacts.
   Run from the joltc-jlt directory, after `jolt native`:
 
@@ -41,7 +41,7 @@
                                 :maxContactConstraints 1024 :_padding 0
                                 :broadPhaseLayerInterface bpl :objectLayerPairFilter pairs
                                 :objectVsBroadPhaseLayerFilter ovb})))
-          ;; zero or less is Jolt's default, a worker thread per core less
+          ;; zero or less is the engine's default, a worker thread per core less
           ;; one; those threads are where the contact listener is called
           jobs (j/JPH_JobSystemThreadPool_Create
                 (doto (ffi/alloc arena j/JobSystemThreadPoolConfig)

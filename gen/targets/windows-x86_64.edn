@@ -1568,7 +1568,7 @@
   "JPH_WheeledVehicleControllerSettings" {:complete? false, :fields [], :file "joltc.h", :kind :struct, :name "JPH_WheeledVehicleControllerSettings"}
   "JobSystemThreadPoolConfig" {:complete? true, :fields [{:bitfield? false, :desugared "unsigned int", :name "maxJobs", :type "uint32_t"} {:bitfield? false, :desugared "unsigned int", :name "maxBarriers", :type "uint32_t"} {:bitfield? false, :desugared "int", :name "numThreads", :type "int32_t"}], :file "joltc.h", :kind :struct, :name "JobSystemThreadPoolConfig"}}
  :skipped-macros {}
- :source-label "joltc 886e088 (Jolt 5.6.0)"
+ :source-label "joltc 886e088 (Jolt Physics 5.6.0)"
  :system-typedefs
  {"int32_t" {:desugared "int"}
   "uint32_t" {:desugared "unsigned int"}

@@ -1,8 +1,16 @@
 # joltc-jlt
 
-[Jolt Physics](https://github.com/jrouwe/JoltPhysics) for the
-[jolt](https://jolt-lang.net) runtime, through
-[joltc](https://github.com/amerkoleci/joltc), its C API. Three parts:
+[Jolt Physics](https://github.com/jrouwe/JoltPhysics), the physics engine,
+for the [jolt](https://jolt-lang.net) runtime, the Clojure implementation,
+through [joltc](https://github.com/amerkoleci/joltc), the engine's C API.
+
+Two unrelated projects share a name here, so this document never uses it
+bare: the engine is always **Jolt Physics**, and the Clojure
+implementation is **the jolt runtime**, or just the runtime. `jolt` in
+code type is the runtime's command line, and `jolt.ffi` its foreign
+function library.
+
+Three parts:
 
 - `joltc.ffi`, the generated binding: every function, struct, enum and
   constant of `joltc.h` (1261 functions, 71 structs), written by
@@ -17,14 +25,14 @@
 
 This is the raw C API under its own names (`JPH_PhysicsSystem_Create`,
 `JPH_BodyInterface_AddImpulse`), not a Clojure-shaped physics library.
-joltc's header and Jolt's documentation are the reference for what the
-functions do.
+joltc's header and the Jolt Physics documentation are the reference for
+what the functions do.
 
 ## Building
 
 Nothing third-party is committed here. `jolt native` fetches joltc at the
-commit pinned in `native/build.sh` (joltc fetches Jolt itself through
-CMake), builds `libjoltc` and the shim into `native/lib`, and keeps the
+commit pinned in `native/build.sh` (joltc fetches Jolt Physics itself
+through CMake), builds `libjoltc` and the shim into `native/lib`, and keeps the
 checkout for rebuilds and for regenerating the binding.
 
 ```sh
@@ -62,24 +70,47 @@ it loads.
 
 or `{:local/root "../joltc-jlt"}` for a checkout beside your project.
 
-jolt has no prep step for dependencies, so the native build is yours to
-run once, in the checkout the dependency resolves to. The libraries are
-loaded at run time by `joltc.core` rather than declared under
-`:jolt/native`, so a project that depends on this one still loads without
-them, and `(joltc.core/available?)` says whether physics will work.
+The runtime has no prep step for dependencies, so the native build is
+yours to run once, in the checkout the dependency resolves to:
 
 - With `:local/root`, run `jolt native` in that checkout.
-- With a git dependency the checkout is in jolt's cache: `jolt path` in
-  your project prints it
+- With a git dependency the checkout is in the runtime's cache: `jolt path`
+  in your project prints it
   (`~/.jolt/gitlibs/https___github.com_noonian_joltc-jlt.git/<sha>/src`).
   Run `jolt native` in the directory above that `src`. It is per sha, so a
   new pin is a new build.
-- Or build anywhere and set `JOLTC_LIB_DIR` to the directory holding
-  `libjoltc` and `libjoltc_shim`; it is tried first.
 
-`joltc.core/load-libraries!` looks in `JOLTC_LIB_DIR`, then `native/lib`
-under the working directory, then `native/lib` beside this library's
-source, and throws with the list it tried when none holds both libraries.
+### How the libraries are found
+
+This project's `deps.edn` declares both libraries under `:jolt/native`,
+by path relative to itself:
+
+```clojure
+:jolt/native [{:name "joltc" :optional true
+               :darwin ["native/lib/libjoltc.dylib"]
+               :linux ["native/lib/libjoltc.so"]}
+              {:name "joltc_shim" :optional true
+               :darwin ["native/lib/libjoltc_shim.dylib"]
+               :linux ["native/lib/libjoltc_shim.so"]}]
+```
+
+The runtime resolves those paths against the `deps.edn` that wrote them,
+so they hold for a project that depends on this one, and it loads the
+libraries at startup, before any namespace, so there is no loader to
+call. Needs the jolt runtime at 0.8.4 or later.
+
+- **They are `:optional`.** A project that depends on this one starts
+  without the build, and `(joltc.core/available?)` says whether physics
+  will work. `(joltc.core/load-libraries!)` throws with what to do when it
+  will not.
+- **They load at startup**, so after a first `jolt native` a running REPL
+  has to be started again.
+- **To use a build somewhere else**, declare the same two `:name`s in your
+  own project's `deps.edn` with your own paths. A project's declaration
+  wins over a dependency's.
+- **A standalone binary** made by `jolt build` looks for
+  `native/lib/libjoltc.dylib` and its neighbour relative to the directory
+  it is run from, so ship that directory beside it.
 
 ### An example
 
@@ -90,7 +121,7 @@ and everything destroyed in order. Its middle is the per-frame shape:
 ```clojure
 (require '[jolt.ffi :as ffi] '[joltc.core :as jc] '[joltc.ffi :as j])
 
-(jc/load-libraries!)
+(jc/load-libraries!)               ; throws unless the native build is there
 (j/JPH_Init)                      ; once per process
 ;; ... create the system, the job system and the bodies ...
 
@@ -120,25 +151,26 @@ tick  90  removed: bodies 8388608 and 8388609
 ## The shim
 
 `native/joltc_shim.c`, built into `libjoltc_shim` beside `libjoltc` and
-declared at the end of `joltc.core`. It is the only code here that is
+declared in `joltc.core`. It is the only code here that is
 neither joltc's nor generated from it, so it owes an explanation.
 
 ### Why it exists: contacts
 
-Jolt reports contacts through a listener: four C function pointers that it
-calls from inside `JPH_PhysicsSystem_Update`, on the worker threads of its
+Jolt Physics reports contacts through a listener: four C function pointers
+that it calls from inside `JPH_PhysicsSystem_Update`, on the worker threads of its
 job system, while it holds the locks of the bodies involved. The binding
 can express that. `joltc.ffi` has `JPH_ContactListener_Procs`, and
 `jolt.ffi/callback` makes a C function pointer out of a Clojure function.
 On this runtime it is the wrong thing to do, for a reason that is the
-runtime's and not Jolt's:
+runtime's and not the engine's:
 
 1. A callback that arrives on a thread the runtime never started has to be
    declared `:collect-safe`, which reactivates the thread on the way in.
-   Without it, jolt code runs on a thread the collector does not know
-   about, and the process dies of a memory fault no handler can catch.
+   Without it, Clojure code runs on a thread the garbage collector does
+   not know about, and the process dies of a memory fault no handler can catch.
 2. Once in, the callback allocates like any other Clojure code, and an
-   allocation that reaches a collection has to stop every jolt thread.
+   allocation that reaches a collection has to stop every thread the
+   runtime is running.
 3. The thread that called `JPH_PhysicsSystem_Update` is one of them, and
    it is parked inside a foreign call that is not `:blocking`. Such a
    thread stays active for the whole call and never reaches a safe point.
@@ -148,7 +180,7 @@ runtime's and not Jolt's:
    contact callback first happens to trip a collection.
 
 That is the rule `jolt.ffi` documents for `:collect-safe` callbacks,
-applied to Jolt; it was not reproduced here. Marking `Update` `:blocking`
+applied to Jolt Physics; it was not reproduced here. Marking `Update` `:blocking`
 would break the cycle, and would leave a foreign crossing, a thread
 activation and a possible stop-the-world collection per contact, inside
 the solver, on several threads at once. Nor is there a single-threaded
@@ -157,7 +189,8 @@ one per core.
 
 The shim takes the listener out of the runtime altogether. Its four
 functions are C: the added and removed hooks append a small struct to a
-buffer under a mutex, and that is all that happens on Jolt's threads.
+buffer under a mutex, and that is all that happens on the engine's
+threads.
 After `Update` returns, the stepping thread asks for the buffer with one
 call. No callback ever enters the Clojure runtime, at any thread count.
 
@@ -165,11 +198,11 @@ call. No callback ever enters the Clojure runtime, at any thread count.
 
 After a step, a renderer wants to know where every body that moved now
 is. Through the binding that is `JPH_BodyInterface_GetPositionAndRotation`
-and two struct reads for each body. `joltc_shim_read_transforms` asks Jolt
-for its active bodies and writes all of their ids and transforms into two
+and two struct reads for each body. `joltc_shim_read_transforms` asks the
+engine for its active bodies and writes all of their ids and transforms into two
 flat arrays in one call.
 
-Measured with 1000 awake bodies (an M1 Pro, jolt 0.8.20):
+Measured with 1000 awake bodies (an M1 Pro, jolt runtime 0.8.20):
 
 | | per frame |
 |---|---|
@@ -188,7 +221,7 @@ without.
 
 ### What it gives
 
-All six are for the thread that steps the system, between updates.
+These are for the thread that steps the system, between updates.
 
 | Function | |
 |---|---|
@@ -198,6 +231,7 @@ All six are for the thread that steps the system, between updates.
 | `joltc_shim_contacts_drain [contacts ints floats max]` | Copies the oldest events out, in order, and takes them off the buffer. Returns the count; the rest stay for the next call. |
 | `joltc_shim_contacts_dropped [contacts]` | Events lost to a full buffer since the last call. |
 | `joltc_shim_contacts_destroy [system contacts]` | Takes the listener off and frees the buffer. Before the system is destroyed. |
+| `joltc_shim_version []` | The version of this contract, which goes up when a layout or a signature changes. `joltc.core/available?` checks it. |
 
 A drained event is five `int32` and seven `float`:
 
@@ -215,17 +249,17 @@ The shim is a policy, not a general listener. Each of these was a choice
 for a frame loop that keeps integer ids in user data, and each is a
 reason you might outgrow it:
 
-- **User data is truncated to 32 bits.** Jolt carries 64. An integer id
+- **User data is truncated to 32 bits.** Jolt Physics carries 64. An integer id
   fits; a pointer does not.
 - **One manifold point.** A manifold has up to four; an added event
   records the first and the manifold's depth.
-- **Removed events carry only the two body ids.** Jolt names the pair and
-  no more, and either body may already be gone, so the user data and the
+- **Removed events carry only the two body ids.** The engine names the pair
+  and no more, and either body may already be gone, so the user data and the
   floats are zero. Keep your own map from body id to whatever you need.
 - **Persisting contacts are not reported**, only the frame a contact
   begins and the frame it ends.
 - **A contact also ends when its bodies fall asleep**, and begins again
-  when they wake: that is Jolt's doing, and it is what the `removed` at
+  when they wake: that is the engine's doing, and it is what the `removed` at
   tick 90 above is. Removed means no longer being solved, not no longer
   touching.
 - **Every contact is accepted.** The validate hook never rejects a pair,
@@ -238,8 +272,8 @@ reason you might outgrow it:
   points it at the shim's. Any number of systems can each have a shim
   buffer, but a listener with procs of your own cannot exist beside one:
   whichever set the table last has every listener in the process.
-- **The transform readers do not lock.** They use Jolt's no-lock body
-  interface, so they are for the stepping thread, between updates, with
+- **The transform readers do not lock.** They use the engine's no-lock
+  body interface, so they are for the stepping thread, between updates, with
   nothing else adding or moving bodies.
 - **Positions are floats**, as joltc is built here. A double precision
   build would have them narrowed.
@@ -248,7 +282,7 @@ reason you might outgrow it:
 
 If you need what it leaves out (contact filtering, every manifold point,
 64-bit user data), the pattern is the thing to keep: write the listener in
-C, buffer on Jolt's threads, drain from yours. `native/joltc_shim.c` is
+C, buffer on the engine's threads, drain from yours. `native/joltc_shim.c` is
 short enough to copy and change.
 
 ## Notes on joltc
@@ -272,13 +306,13 @@ Things the header does not say, found by using it:
   and `JPH_BodyCreationSettings_Destroy` as soon as the body is made.
 - **A job system always has worker threads.**
   `JPH_JobSystemThreadPool_Create` passes a positive `numThreads` through
-  and turns zero or less into Jolt's default, one per core less one. Zero
+  and turns zero or less into the engine's default, one per core less one. Zero
   does not mean "run the jobs on my thread".
 - **`JPH_Init` once per process**, before anything else, and
   `JPH_Shutdown` after the last system is gone.
 - **Nothing in the binding is `:blocking`.** A call that takes long
-  (`JPH_PhysicsSystem_Update` on a large world) holds every other jolt
-  thread off the collector until it returns.
+  (`JPH_PhysicsSystem_Update` on a large world) holds every other
+  runtime thread off the garbage collector until it returns.
 
 ## Regenerating the binding
 

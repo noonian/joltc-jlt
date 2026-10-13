@@ -1,75 +1,37 @@
 (ns joltc.core
-  "Loading joltc (the C API over Jolt Physics) and the joltc shim, both
-  built by `jolt native` (native/build.sh) into native/lib and loaded here
-  at run time, not declared under :jolt/native, so a project without the
-  build still loads. The generated binding is `joltc.ffi`.
+  "Whether the native libraries are there, and the shim.
 
-  The shim is this library's own C (native/joltc_shim.c), declared at the
-  end of this namespace. It exists because a per-frame loop needs two
-  things the binding alone does not give it on this runtime: contacts,
-  which Jolt reports from its job threads inside JPH_PhysicsSystem_Update,
-  where a jolt callback would deadlock against the collector, so the shim
-  buffers them in C and the stepping thread drains them afterwards; and
-  every active body's transform in one call instead of one call and two
-  struct reads per body. The README's \"The shim\" section has the account
-  and the limits."
-  (:require [jolt.ffi :as ffi]
-            [clojure.string :as str]
-            [clojure.java.io :as io]))
+  Two libraries, both built by the `native` task (native/build.sh) into
+  native/lib: libjoltc, which is joltc (the C API over Jolt Physics), and
+  libjoltc_shim, this library's own C (native/joltc_shim.c). deps.edn
+  declares both under :jolt/native as :optional, so the runtime loads
+  them at startup when they have been built and a project without the
+  build still loads; `available?` says which. The generated binding is
+  `joltc.ffi`.
 
-(defn- os-key []
-  (let [n (str/lower-case (or (System/getProperty "os.name") ""))]
-    (cond (str/includes? n "mac") :darwin (str/includes? n "win") :windows :else :linux)))
-
-(defn- lib-file [dir base]
-  (str dir "/" (case (os-key) :darwin (str "lib" base ".dylib") :windows (str base ".dll") (str "lib" base ".so"))))
-
-(defn- beside-source
-  "This library's directory through the classpath (where its source
-  file is), so a project that depends on it, by :local/root or as a git
-  dependency, finds the build under it."
-  []
-  (when-let [u (io/resource "joltc/core.clj")]
-    (-> (io/file (.getPath u)) .getParentFile .getParentFile .getParentFile .getPath)))
-
-(def candidate-dirs
-  "Where `jolt native` puts its output: native/lib under the working
-  directory, then beside this library's source; JOLTC_LIB_DIR overrides."
-  (cond-> ["native/lib"]
-    (beside-source) (conj (str (beside-source) "/native/lib"))))
-
-(defonce ^:private loaded (atom nil))
-
-(defn load-libraries!
-  "Load libjoltc and the shim once; returns the directory used. The build
-  makes both, so a directory holding only one of them is not a build and
-  is passed over."
-  []
-  (or @loaded
-      (let [dirs (remove nil? (cons (System/getenv "JOLTC_LIB_DIR") candidate-dirs))
-            missing (fn [dir] (remove #(.exists (io/file %)) [(lib-file dir "joltc") (lib-file dir "joltc_shim")]))
-            found (some #(when (empty? (missing %)) %) dirs)]
-        (when-not found
-          (throw (ex-info "joltc: not built; run `jolt native` in joltc-jlt (or set JOLTC_LIB_DIR)"
-                          {:tried (vec dirs)
-                           :missing (vec (mapcat missing dirs))})))
-        (ffi/load-library (lib-file found "joltc"))
-        (ffi/load-library (lib-file found "joltc_shim"))
-        (reset! loaded found))))
-
-(defn available?
-  "True when the native libraries can be loaded."
-  []
-  (try (load-libraries!) true (catch Exception _ false)))
+  The shim exists because a frame loop needs two things the binding alone
+  does not give it. Contacts: Jolt Physics reports them from its worker
+  threads inside JPH_PhysicsSystem_Update, where a Clojure callback would
+  deadlock against the runtime's garbage collector, so the shim buffers
+  them in C and the stepping thread drains them afterwards. And every
+  active body's transform in one call, instead of one call and two struct
+  reads per body. The README's \"The shim\" section has the account and
+  the limits."
+  (:require [jolt.ffi :as ffi]))
 
 ;;; ---------------------------------------------------------------- the shim
 ;;
-;; native/joltc_shim.c, whose opening comment is the contract. All six are
-;; for the thread that steps the system, between updates. Body ids and user
-;; data come back as unsigned 32-bit values: read the id and int buffers with
-;; (ffi/read-array p :uint32 n) and mask each with 0xFFFFFFFF, since a Jolt
-;; body id keeps a sequence number in its top bits and reads back negative
-;; from an int-array otherwise.
+;; native/joltc_shim.c, whose opening comment is the contract. Apart from
+;; the version, these are for the thread that steps the system, between
+;; updates. Body ids and user data come back as unsigned 32-bit values:
+;; read the id and int buffers with (ffi/read-array p :uint32 n) and mask
+;; each with 0xFFFFFFFF, since a body id keeps a sequence number in its top
+;; bits and reads back negative from an int-array otherwise.
+
+(ffi/defcfn joltc_shim_version
+  "[] -> n. The version of the shim's contract, which goes up when one of
+  its layouts or signatures changes."
+  "joltc_shim_version" [] :uint32)
 
 (ffi/defcfn joltc_shim_read_transforms
   "[system ids out max] -> n. Every active rigid body's transform in one
@@ -109,3 +71,39 @@
   "[contacts] -> n. Events dropped because the buffer was full since the
   last call, which resets the count."
   "joltc_shim_contacts_dropped" [:pointer] :uint32)
+
+;;; ------------------------------------------------------------ availability
+
+(def shim-version
+  "The shim contract this namespace was written against."
+  1)
+
+(defn- loaded-shim-version
+  "The loaded shim's version, or nil when it is not loaded. The shim links
+  libjoltc, so an answer means both are there."
+  []
+  (try (long (joltc_shim_version)) (catch Throwable _ nil)))
+
+(defn available?
+  "True when libjoltc and the shim are loaded and the shim is the version
+  this namespace expects."
+  []
+  (= shim-version (loaded-shim-version)))
+
+(defn load-libraries!
+  "Throw unless the native libraries are loaded, saying what to do about
+  it. The runtime loaded them at startup if they were built, so there is
+  nothing to load here; the name is from when there was."
+  []
+  (let [v (loaded-shim-version)]
+    (cond
+      (nil? v)
+      (throw (ex-info (str "joltc: the native libraries are not built. Run the `native` task in the "
+                           "joltc-jlt checkout (for a git dependency, `jolt path` shows where it is) "
+                           "and start again: they are loaded at startup.")
+                      {}))
+      (not= v shim-version)
+      (throw (ex-info (str "joltc: the built shim is version " v " and this source expects " shim-version
+                           ". Run the `native` task in the joltc-jlt checkout again.")
+                      {:built v :expected shim-version}))
+      :else true)))

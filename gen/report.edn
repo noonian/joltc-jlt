@@ -1,10 +1,10 @@
 {:targets
  {"darwin-arm64"
-  {:cross? false, :source-label "joltc 886e088 (Jolt 5.6.0)"},
+  {:cross? false, :source-label "joltc 886e088 (Jolt Physics 5.6.0)"},
   "linux-x86_64"
-  {:cross? true, :source-label "joltc 886e088 (Jolt 5.6.0)"},
+  {:cross? true, :source-label "joltc 886e088 (Jolt Physics 5.6.0)"},
   "windows-x86_64"
-  {:cross? true, :source-label "joltc 886e088 (Jolt 5.6.0)"}},
+  {:cross? true, :source-label "joltc 886e088 (Jolt Physics 5.6.0)"}},
  :namespaces
  [{:ns joltc.ffi,
    :counts

@@ -1,18 +1,23 @@
-/* The joltc shim: the two things a per-frame physics loop on the jolt
-   runtime cannot do well through the generated binding alone. Built by
-   native/build.sh into lib/libjoltc_shim.{dylib,so} next to libjoltc, loaded
-   by joltc.core at run time, and declared there as the six
-   joltc_shim_* functions. The README's "The shim" section is the longer
-   account; this comment is the contract.
+/* The joltc shim: the two things a per-frame physics loop cannot do well
+   through the generated binding alone. Built by native/build.sh into
+   lib/libjoltc_shim.{dylib,so} next to libjoltc, declared with it under
+   :jolt/native in deps.edn, and bound in joltc.core as the joltc_shim_*
+   functions. The README's "The shim" section is the longer account; this
+   comment is the contract.
+
+   Two projects share a name. Here "Jolt Physics" or "the engine" is the
+   physics engine this binds, and "the runtime" is the jolt runtime, the
+   Clojure implementation the binding is for.
 
    Why it exists
 
-   1. Contacts. Jolt reports contacts through a listener it calls from inside
-      JPH_PhysicsSystem_Update, on its job system's worker threads. A jolt
-      callback there would arrive on a thread the runtime never started, so it
-      would need jolt.ffi's :collect-safe, and it would allocate; an
-      allocation that reaches a collection has to stop every jolt thread, and
-      the thread that called Update is parked in a foreign call that is not
+   1. Contacts. Jolt Physics reports contacts through a listener it calls
+      from inside JPH_PhysicsSystem_Update, on its job system's worker
+      threads. A Clojure callback there would arrive on a thread the runtime
+      never started, so it would need :collect-safe (an option of the
+      runtime's jolt.ffi library), and it would allocate; an allocation that
+      reaches a garbage collection has to stop every runtime thread, and the
+      thread that called Update is parked in a foreign call that is not
       :blocking, so it never reaches a safe point. Update waits for the job,
       the job waits for the collection, the collection waits for Update. So
       the listener lives here: it appends plain structs to a buffer under a
@@ -25,18 +30,18 @@
 
    Contract
 
-   Threads. The contact listener runs on Jolt's job threads and is the only
-   part of this file that does; the buffer's mutex is what makes that safe.
+   Threads. The contact listener runs on the engine's job threads and is
+   the only part of this file that does; the buffer's mutex is what makes that safe.
    Everything exported is for the thread that steps the system, between
-   updates: the transform readers use Jolt's no-lock body interface, so
-   calling them while JPH_PhysicsSystem_Update runs, or while another thread
+   updates: the transform readers use the engine's no-lock body interface,
+   so calling them while JPH_PhysicsSystem_Update runs, or while another thread
    adds, removes or moves bodies, is a data race.
 
    Transforms are 7 floats per body: px py pz, then the rotation quaternion
    qx qy qz qw. Positions are narrowed to float if joltc was built with
    JPH_DOUBLE_PRECISION (native/build.sh does not build it that way).
 
-   Body ids are Jolt's 32-bit JPH_BodyID, index in the low bits and a
+   Body ids are the engine's 32-bit JPH_BodyID, index in the low bits and a
    sequence number in the high ones, so an id can be above INT32_MAX; read
    them as unsigned.
 
@@ -45,14 +50,14 @@
        normal (from body1 to body2), the first manifold point on body1 and
        the penetration depth. A manifold has up to four points; the rest are
        not recorded.
-     - REMOVED carries the two body ids and nothing else (zeros): Jolt names
+     - REMOVED carries the two body ids and nothing else (zeros): the engine names
        only the pair, and either body may already be gone.
-     - Persisting contacts are not reported. Jolt also ends a contact when
-       its bodies fall asleep and adds it again when they wake, so REMOVED
+     - Persisting contacts are not reported. The engine also ends a contact
+       when its bodies fall asleep and adds it again when they wake, so REMOVED
        means "no longer being solved", not "no longer touching".
      - Every contact is accepted (the validate hook never rejects a pair).
        Filter with object layers, or on the events.
-     - User data is 64 bits in Jolt and the drain hands back the low 32 of
+     - User data is 64 bits in the engine and the drain hands back the low 32 of
        it. That fits an integer id; it does not fit a pointer.
      - The buffer holds `capacity` events. One that arrives when it is full
        is dropped and counted; joltc_shim_contacts_dropped answers the count.
@@ -71,12 +76,20 @@
 #include <pthread.h>
 #include "joltc.h"
 
+/* The version of this contract: it goes up when a layout or a signature
+   here changes. Also the one call that proves both libraries are loaded,
+   since this one links libjoltc. */
+uint32_t joltc_shim_version(void)
+{
+    return 1;
+}
+
 /* ------------------------------------------------------------ transforms */
 
 /* The transform of every active (awake) rigid body: ids[i] is the body and
    out[7*i .. 7*i+6] its px py pz qx qy qz qw. ids must have room for max
    ids and out for 7 * max floats. Returns how many were written, at most
-   max; when more bodies are active than max, the first max of Jolt's
+   max; when more bodies are active than max, the first max of the engine's
    active list are the ones read. Sleeping and static bodies are not active, and soft
    bodies are not rigid. */
 uint32_t joltc_shim_read_transforms(JPH_PhysicsSystem* system, JPH_BodyID* ids, float* out, uint32_t max)

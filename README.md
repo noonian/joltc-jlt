@@ -16,12 +16,14 @@ Three parts:
   constant of `joltc.h` (1261 functions, 71 structs), written by
   [jolt-bindgen](https://github.com/noonian/jolt-bindgen) and not edited by
   hand.
-- `joltc.core`, the loader: finds the built libraries and loads them at run
-  time.
-- The shim, about two hundred lines of C beside the binding, for the two
-  things a frame loop needs that the binding alone does not give it on
-  this runtime: contact events, and every moving body's transform in one
-  call. [The shim](#the-shim) below says why and what it costs.
+- `joltc.shim`, the shim: about two hundred lines of C beside the binding
+  and the namespace that binds them, for the two things a frame loop needs
+  that the binding alone does not give it on this runtime: contact events,
+  and every moving body's transform in one call. [The shim](#the-shim)
+  below says why and what it costs. `joltc.shim/available?` says whether
+  the native build is there.
+- The native build: `native/build.sh` and the `:jolt/native` declaration
+  in `deps.edn` that tells the runtime where its output is.
 
 This is the raw C API under its own names (`JPH_PhysicsSystem_Create`,
 `JPH_BodyInterface_AddImpulse`), not a Clojure-shaped physics library.
@@ -80,7 +82,7 @@ cd joltc-jlt && jolt native
 ```
 
 A git dependency (`{:git/sha "<commit sha>"}`) does resolve, and your
-project starts, but with `(joltc.core/available?)` false: the runtime
+project starts, but with `(joltc.shim/available?)` false: the runtime
 fetched the source into its cache and nothing built it. You can build it
 there (`jolt path` in your project prints the checkout, under
 `~/.jolt/gitlibs/`, and `jolt native` in the directory above its `src`
@@ -110,8 +112,8 @@ declares as `:jolt/min-version`, so an older runtime refuses to load the
 project instead of failing to find the libraries.
 
 - **They are `:optional`.** A project that depends on this one starts
-  without the build, and `(joltc.core/available?)` says whether physics
-  will work. `(joltc.core/load-libraries!)` throws with what to do when it
+  without the build, and `(joltc.shim/available?)` says whether physics
+  will work. `(joltc.shim/load-libraries!)` throws with what to do when it
   will not.
 - **They load at startup**, so after a first `jolt native` a running REPL
   has to be started again.
@@ -129,23 +131,23 @@ two collision layers, a system, a job system, a floor, a box, 120 steps,
 and everything destroyed in order. Its middle is the per-frame shape:
 
 ```clojure
-(require '[jolt.ffi :as ffi] '[joltc.core :as jc] '[joltc.ffi :as j])
+(require '[jolt.ffi :as ffi] '[joltc.shim :as shim] '[joltc.ffi :as j])
 
-(jc/load-libraries!)               ; throws unless the native build is there
-(j/JPH_Init)                      ; once per process
+(shim/load-libraries!)   ; throws unless the native build is there
+(j/JPH_Init)             ; once per process
 ;; ... create the system, the job system and the bodies ...
 
-(def contacts (jc/joltc_shim_contacts_create system 256))
+(def contacts (shim/joltc_shim_contacts_create system 256))
 
 ;; each frame
 (j/JPH_PhysicsSystem_Update system (/ 1.0 60.0) 1 jobs)
 
-(let [n (jc/joltc_shim_read_transforms system ids transforms max-bodies)]
+(let [n (shim/joltc_shim_read_transforms system ids transforms max-bodies)]
   ;; ids: n body ids; transforms: 7 floats each, px py pz qx qy qz qw
   (ffi/read-array ids :uint32 n)
   (ffi/read-array transforms :float (* 7 n)))
 
-(let [n (jc/joltc_shim_contacts_drain contacts c-ints c-floats 256)]
+(let [n (shim/joltc_shim_contacts_drain contacts c-ints c-floats 256)]
   ;; c-ints: 5 per event; c-floats: 7 per event
   ...)
 ```
@@ -161,7 +163,7 @@ tick  90  removed: bodies 8388608 and 8388609
 ## The shim
 
 `native/joltc_shim.c`, built into `libjoltc_shim` beside `libjoltc` and
-declared in `joltc.core`. It is the only code here that is
+declared in `joltc.shim`. It is the only code here that is
 neither joltc's nor generated from it, so it owes an explanation.
 
 ### Why it exists: contacts
@@ -241,7 +243,7 @@ These are for the thread that steps the system, between updates.
 | `joltc_shim_contacts_drain [contacts ints floats max]` | Copies the oldest events out, in order, and takes them off the buffer. Returns the count; the rest stay for the next call. |
 | `joltc_shim_contacts_dropped [contacts]` | Events lost to a full buffer since the last call. |
 | `joltc_shim_contacts_destroy [system contacts]` | Takes the listener off and frees the buffer. Before the system is destroyed. |
-| `joltc_shim_version []` | The version of this contract, which goes up when a layout or a signature changes. `joltc.core/available?` checks it. |
+| `joltc_shim_version []` | The version of this contract, which goes up when a layout or a signature changes. `joltc.shim/available?` checks it. |
 
 A drained event is five `int32` and seven `float`:
 

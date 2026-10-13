@@ -1,7 +1,7 @@
 /* The joltc shim: the two things a per-frame physics loop cannot do well
    through the generated binding alone. Built by native/build.sh into
    lib/libjoltc_shim.{dylib,so} next to libjoltc, declared with it under
-   :jolt/native in deps.edn, and bound in joltc.core as the joltc_shim_*
+   :jolt/native in deps.edn, and bound in joltc.shim as the joltc_shim_*
    functions. The README's "The shim" section is the longer account; this
    comment is the contract.
 

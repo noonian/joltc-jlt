@@ -5,7 +5,7 @@
 
       jolt -A:examples -m falling-box"
   (:require [jolt.ffi :as ffi]
-            [joltc.core :as jc]
+            [joltc.shim :as shim]
             [joltc.ffi :as j]))
 
 ;; two object layers, each its own broad-phase layer: what never moves, and
@@ -19,7 +19,7 @@
 (defn- unsigned [i] (bit-and 0xFFFFFFFF (long i)))
 
 (defn -main [& _]
-  (jc/load-libraries!)
+  (shim/load-libraries!)
   (when-not (j/JPH_Init) (throw (ex-info "JPH_Init failed" {})))
   (with-open [arena (ffi/confined-arena)]
     (let [vec3 (fn [x y z] (doto (ffi/alloc arena j/JPH_Vec3) (ffi/write j/JPH_Vec3 {:x x :y y :z z})))
@@ -65,7 +65,7 @@
           box (add-box [0.5 0.5 0.5] [0.0 5.0 0.0] j/JPH_MotionType_Dynamic layer-moving 2)
 
           ;; the shim: a contact buffer on the system, and room to read into
-          contacts (jc/joltc_shim_contacts_create system max-contacts)
+          contacts (shim/joltc_shim_contacts_create system max-contacts)
           ids (ffi/alloc arena (* 4 max-bodies))
           transforms (ffi/alloc arena (* 4 7 max-bodies))
           c-ints (ffi/alloc arena (* 4 5 max-contacts))
@@ -76,14 +76,14 @@
             (when-not (zero? err) (throw (ex-info "JPH_PhysicsSystem_Update failed" {:error err}))))
 
           ;; every awake body's transform, in one call
-          (let [n (jc/joltc_shim_read_transforms system ids transforms max-bodies)]
+          (let [n (shim/joltc_shim_read_transforms system ids transforms max-bodies)]
             (when (and (pos? n) (zero? (mod tick 20)))
               (let [id (unsigned (aget (ffi/read-array ids :uint32 n) 0))
                     [px py pz] (ffi/read-array transforms :float 7)]
                 (println (format "tick %3d  body %d at (%.2f %.2f %.2f)" tick id px py pz)))))
 
           ;; what touched and what parted during that update
-          (let [n (jc/joltc_shim_contacts_drain contacts c-ints c-floats max-contacts)]
+          (let [n (shim/joltc_shim_contacts_drain contacts c-ints c-floats max-contacts)]
             (when (pos? n)
               (let [is (ffi/read-array c-ints :uint32 (* 5 n))
                     fs (ffi/read-array c-floats :float (* 7 n))]
@@ -96,11 +96,11 @@
                       ;; a removed event names the pair and nothing else; a
                       ;; body falling asleep ends its contacts too
                       (println (format "tick %3d  removed: bodies %d and %d" tick (at 1) (at 2)))))))))
-          (let [dropped (jc/joltc_shim_contacts_dropped contacts)]
+          (let [dropped (shim/joltc_shim_contacts_dropped contacts)]
             (when (pos? dropped) (println "dropped" dropped "contacts: raise max-contacts"))))
         (finally
           ;; the listener before the system, the bodies before their shapes
-          (jc/joltc_shim_contacts_destroy system contacts)
+          (shim/joltc_shim_contacts_destroy system contacts)
           (doseq [{:keys [id shape]} [box floor]]
             (j/JPH_BodyInterface_RemoveAndDestroyBody bodies id)
             (j/JPH_Shape_Destroy shape))

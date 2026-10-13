@@ -7,7 +7,7 @@
  ;; fetches joltc at a pinned commit; nothing third-party is committed here).
  ;; The paths are relative to this file, for a project that depends on this
  ;; one too. :optional, so a project without the build still loads and
- ;; `joltc.core/available?` says whether physics will work. No :windows
+ ;; `joltc.shim/available?` says whether physics will work. No :windows
  ;; candidates: the build does not make them, and without the key the
  ;; platform's own search for joltc.dll and joltc_shim.dll is what is tried.
  :jolt/native [{:name "joltc" :optional true

@@ -1,5 +1,5 @@
-(ns joltc.core
-  "Whether the native libraries are there, and the shim.
+(ns joltc.shim
+  "The shim, and whether the native libraries are there.
 
   Two libraries, both built by the `native` task (native/build.sh) into
   native/lib: libjoltc, which is joltc (the C API over Jolt Physics), and

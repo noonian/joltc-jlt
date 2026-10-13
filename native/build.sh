@@ -1,6 +1,8 @@
 #!/bin/sh
 # Build the Jolt Physics C wrapper (joltc, which fetches Jolt itself) and
-# the joltc shim into native/lib. Needs git, cmake and a C/C++ compiler.
+# the joltc shim into native/lib. Needs git, cmake and a C/C++ compiler
+# (CC picks the one that compiles the shim; cmake finds its own). macOS and
+# Linux: the shim uses pthreads and this script is POSIX sh.
 # The libraries are loaded at run time by joltc.core, so nothing else in
 # the workspace depends on this having run. Takes a few minutes the first
 # time; the joltc checkout and build directory are kept for rebuilds.
@@ -34,6 +36,6 @@ case "$(uname)" in
   *)      ext=so;    rpath="-Wl,-rpath,\$ORIGIN" ;;
 esac
 cp joltc/build/lib/libjoltc.$ext lib/
-cc="${CC:-clang}"
+cc="${CC:-cc}"
 "$cc" -O2 -shared -fPIC -I joltc/include -o lib/libjoltc_shim.$ext joltc_shim.c -L lib -ljoltc $rpath -lpthread
 echo "built lib/libjoltc.$ext and lib/libjoltc_shim.$ext"

@@ -1,15 +1,69 @@
-/* The joltc shim: the two things a physics adapter wants in bulk rather
-   than per body. Built by native/build.sh into
-   lib/libjoltc_shim.{dylib,so} next to libjoltc, and loaded by
-   joltc.core at run time.
+/* The joltc shim: the two things a per-frame physics loop on the jolt
+   runtime cannot do well through the generated binding alone. Built by
+   native/build.sh into lib/libjoltc_shim.{dylib,so} next to libjoltc, loaded
+   by joltc.core at run time, and declared there as the six
+   joltc_shim_* functions. The README's "The shim" section is the longer
+   account; this comment is the contract.
 
-   1. read_transforms: every active rigid body's position and rotation into
-      one float array with one call, instead of a C call and two struct
-      reads per body.
-   2. contacts: a contact listener that appends added and removed contacts
-      to a buffer under a mutex (Jolt calls it from its job threads), and a
-      drain that copies the buffer out. No callback ever enters the
-      Clojure runtime. */
+   Why it exists
+
+   1. Contacts. Jolt reports contacts through a listener it calls from inside
+      JPH_PhysicsSystem_Update, on its job system's worker threads. A jolt
+      callback there would arrive on a thread the runtime never started, so it
+      would need jolt.ffi's :collect-safe, and it would allocate; an
+      allocation that reaches a collection has to stop every jolt thread, and
+      the thread that called Update is parked in a foreign call that is not
+      :blocking, so it never reaches a safe point. Update waits for the job,
+      the job waits for the collection, the collection waits for Update. So
+      the listener lives here: it appends plain structs to a buffer under a
+      mutex, and the stepping thread copies them out afterwards with one
+      call. No callback ever enters the Clojure runtime.
+
+   2. Transforms. Reading where every moving body ended up is one foreign
+      call and two struct reads per body through the binding. Here it is one
+      call for all of them, into two flat arrays.
+
+   Contract
+
+   Threads. The contact listener runs on Jolt's job threads and is the only
+   part of this file that does; the buffer's mutex is what makes that safe.
+   Everything exported is for the thread that steps the system, between
+   updates: the transform readers use Jolt's no-lock body interface, so
+   calling them while JPH_PhysicsSystem_Update runs, or while another thread
+   adds, removes or moves bodies, is a data race.
+
+   Transforms are 7 floats per body: px py pz, then the rotation quaternion
+   qx qy qz qw. Positions are narrowed to float if joltc was built with
+   JPH_DOUBLE_PRECISION (native/build.sh does not build it that way).
+
+   Body ids are Jolt's 32-bit JPH_BodyID, index in the low bits and a
+   sequence number in the high ones, so an id can be above INT32_MAX; read
+   them as unsigned.
+
+   Contact events:
+     - ADDED carries both body ids, both bodies' user data, the world space
+       normal (from body1 to body2), the first manifold point on body1 and
+       the penetration depth. A manifold has up to four points; the rest are
+       not recorded.
+     - REMOVED carries the two body ids and nothing else (zeros): Jolt names
+       only the pair, and either body may already be gone.
+     - Persisting contacts are not reported. Jolt also ends a contact when
+       its bodies fall asleep and adds it again when they wake, so REMOVED
+       means "no longer being solved", not "no longer touching".
+     - Every contact is accepted (the validate hook never rejects a pair).
+       Filter with object layers, or on the events.
+     - User data is 64 bits in Jolt and the drain hands back the low 32 of
+       it. That fits an integer id; it does not fit a pointer.
+     - The buffer holds `capacity` events. One that arrives when it is full
+       is dropped and counted; joltc_shim_contacts_dropped answers the count.
+       Drain once per update and size the buffer for the worst update.
+
+   One listener per process. joltc keeps the listener's function table in one
+   static (JPH_ContactListener_SetProcs), and joltc_shim_contacts_create
+   points it at this file's. Any number of systems may each have a shim
+   contact buffer, but a listener with procs of your own, created through
+   the binding, cannot exist beside one: whichever called SetProcs last has
+   every listener in the process. */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -19,8 +73,12 @@
 
 /* ------------------------------------------------------------ transforms */
 
-/* Fill ids and out (7 floats per body: px py pz qx qy qz qw) for up to max
-   active rigid bodies. Returns how many were written. */
+/* The transform of every active (awake) rigid body: ids[i] is the body and
+   out[7*i .. 7*i+6] its px py pz qx qy qz qw. ids must have room for max
+   ids and out for 7 * max floats. Returns how many were written, at most
+   max; when more bodies are active than max, the first max of Jolt's
+   active list are the ones read. Sleeping and static bodies are not active, and soft
+   bodies are not rigid. */
 uint32_t joltc_shim_read_transforms(JPH_PhysicsSystem* system, JPH_BodyID* ids, float* out, uint32_t max)
 {
     uint32_t n = JPH_PhysicsSystem_GetNumActiveBodies(system, JPH_BodyType_Rigid);
@@ -39,8 +97,9 @@ uint32_t joltc_shim_read_transforms(JPH_PhysicsSystem* system, JPH_BodyID* ids, 
     return n;
 }
 
-/* Fill out with the transforms of the given bodies (7 floats each), active
-   or not. Returns count. */
+/* The transforms of the bodies named in ids, active or not, in the order
+   given: out must have room for 7 * count floats. Every id must be a live
+   body. Returns count. */
 uint32_t joltc_shim_read_body_transforms(JPH_PhysicsSystem* system, const JPH_BodyID* ids, float* out, uint32_t count)
 {
     JPH_BodyInterface* bi = JPH_PhysicsSystem_GetBodyInterfaceNoLock(system);
@@ -60,7 +119,7 @@ uint32_t joltc_shim_read_body_transforms(JPH_PhysicsSystem* system, const JPH_Bo
 #define JOLTC_SHIM_CONTACT_ADDED 1
 #define JOLTC_SHIM_CONTACT_REMOVED 2
 
-typedef struct gameth_contact {
+typedef struct joltc_shim_contact {
     uint32_t type;
     JPH_BodyID body1;
     JPH_BodyID body2;
@@ -69,18 +128,18 @@ typedef struct gameth_contact {
     float normal[3];    /* from body1 to body2, world space */
     float point[3];     /* the first manifold point on body1, world space */
     float depth;
-} gameth_contact;
+} joltc_shim_contact;
 
-typedef struct gameth_contacts {
+typedef struct joltc_shim_contacts {
     pthread_mutex_t lock;
-    gameth_contact* items;
+    joltc_shim_contact* items;
     uint32_t count;
     uint32_t capacity;
     uint32_t dropped;
     JPH_ContactListener* listener;
-} gameth_contacts;
+} joltc_shim_contacts;
 
-static void push_contact(gameth_contacts* c, const gameth_contact* item)
+static void push_contact(joltc_shim_contacts* c, const joltc_shim_contact* item)
 {
     pthread_mutex_lock(&c->lock);
     if (c->count < c->capacity) {
@@ -102,7 +161,7 @@ static void on_added(void* userData, const JPH_Body* body1, const JPH_Body* body
                      const JPH_ContactManifold* manifold, JPH_ContactSettings* settings)
 {
     (void)settings;
-    gameth_contact item;
+    joltc_shim_contact item;
     memset(&item, 0, sizeof item);
     item.type = JOLTC_SHIM_CONTACT_ADDED;
     item.body1 = JPH_Body_GetID(body1);
@@ -118,7 +177,7 @@ static void on_added(void* userData, const JPH_Body* body1, const JPH_Body* body
         item.point[0] = (float)p.x; item.point[1] = (float)p.y; item.point[2] = (float)p.z;
     }
     item.depth = JPH_ContactManifold_GetPenetrationDepth(manifold);
-    push_contact((gameth_contacts*)userData, &item);
+    push_contact((joltc_shim_contacts*)userData, &item);
 }
 
 static void on_persisted(void* userData, const JPH_Body* body1, const JPH_Body* body2,
@@ -129,24 +188,26 @@ static void on_persisted(void* userData, const JPH_Body* body1, const JPH_Body* 
 
 static void on_removed(void* userData, const JPH_SubShapeIDPair* pair)
 {
-    gameth_contact item;
+    joltc_shim_contact item;
     memset(&item, 0, sizeof item);
     item.type = JOLTC_SHIM_CONTACT_REMOVED;
     item.body1 = pair->Body1ID;
     item.body2 = pair->Body2ID;
-    push_contact((gameth_contacts*)userData, &item);
+    push_contact((joltc_shim_contacts*)userData, &item);
 }
 
 static JPH_ContactListener_Procs procs = { on_validate, on_added, on_persisted, on_removed };
 
 /* Create a contact buffer with room for `capacity` events and install its
-   listener on the system. Destroy with joltc_shim_contacts_destroy
-   before the system goes. */
-gameth_contacts* joltc_shim_contacts_create(JPH_PhysicsSystem* system, uint32_t capacity)
+   listener on the system, replacing whatever listener the system had and
+   pointing joltc's process-wide listener procs at this file's (see "One
+   listener per process" above). Returns NULL when out of memory. Destroy it
+   with joltc_shim_contacts_destroy before the system is destroyed. */
+joltc_shim_contacts* joltc_shim_contacts_create(JPH_PhysicsSystem* system, uint32_t capacity)
 {
-    gameth_contacts* c = (gameth_contacts*)calloc(1, sizeof(gameth_contacts));
+    joltc_shim_contacts* c = (joltc_shim_contacts*)calloc(1, sizeof(joltc_shim_contacts));
     if (!c) return NULL;
-    c->items = (gameth_contact*)calloc(capacity, sizeof(gameth_contact));
+    c->items = (joltc_shim_contact*)calloc(capacity, sizeof(joltc_shim_contact));
     if (!c->items) { free(c); return NULL; }
     c->capacity = capacity;
     pthread_mutex_init(&c->lock, NULL);
@@ -156,7 +217,9 @@ gameth_contacts* joltc_shim_contacts_create(JPH_PhysicsSystem* system, uint32_t 
     return c;
 }
 
-void joltc_shim_contacts_destroy(JPH_PhysicsSystem* system, gameth_contacts* c)
+/* Take the listener off the system and free the buffer, with whatever was
+   still in it. Not while the system is updating. A NULL buffer is ignored. */
+void joltc_shim_contacts_destroy(JPH_PhysicsSystem* system, joltc_shim_contacts* c)
 {
     if (!c) return;
     JPH_PhysicsSystem_SetContactListener(system, NULL);
@@ -166,16 +229,19 @@ void joltc_shim_contacts_destroy(JPH_PhysicsSystem* system, gameth_contacts* c)
     free(c);
 }
 
-/* Copy and clear the buffered events. ints gets 5 per event (type, body1,
-   body2, user1 low 32 bits, user2 low 32 bits) and floats 7 per event
-   (normal xyz, point xyz, depth). Returns how many were copied; events
-   beyond max stay buffered. */
-uint32_t joltc_shim_contacts_drain(gameth_contacts* c, int32_t* ints, float* floats, uint32_t max)
+/* Copy the oldest buffered events out, in the order they arrived, and take
+   them off the buffer. Event i fills ints[5*i .. 5*i+4] with type (1 added,
+   2 removed), body1, body2, and the low 32 bits of each body's user data,
+   and floats[7*i .. 7*i+6] with the normal's xyz, the point's xyz and the
+   depth. The ids and user data are unsigned values in int32 slots: read
+   them as uint32. Returns how many were copied, at most max; the rest stay
+   buffered for the next call. */
+uint32_t joltc_shim_contacts_drain(joltc_shim_contacts* c, int32_t* ints, float* floats, uint32_t max)
 {
     pthread_mutex_lock(&c->lock);
     uint32_t n = c->count < max ? c->count : max;
     for (uint32_t i = 0; i < n; i++) {
-        const gameth_contact* e = &c->items[i];
+        const joltc_shim_contact* e = &c->items[i];
         ints[5 * i] = (int32_t)e->type;
         ints[5 * i + 1] = (int32_t)e->body1;
         ints[5 * i + 2] = (int32_t)e->body2;
@@ -185,13 +251,15 @@ uint32_t joltc_shim_contacts_drain(gameth_contacts* c, int32_t* ints, float* flo
         floats[7 * i + 3] = e->point[0]; floats[7 * i + 4] = e->point[1]; floats[7 * i + 5] = e->point[2];
         floats[7 * i + 6] = e->depth;
     }
-    if (n < c->count) memmove(c->items, c->items + n, (c->count - n) * sizeof(gameth_contact));
+    if (n < c->count) memmove(c->items, c->items + n, (c->count - n) * sizeof(joltc_shim_contact));
     c->count -= n;
     pthread_mutex_unlock(&c->lock);
     return n;
 }
 
-uint32_t joltc_shim_contacts_dropped(gameth_contacts* c)
+/* How many events were dropped because the buffer was full since this was
+   last asked; asking resets the count. */
+uint32_t joltc_shim_contacts_dropped(joltc_shim_contacts* c)
 {
     pthread_mutex_lock(&c->lock);
     uint32_t d = c->dropped;

@@ -5,6 +5,7 @@
  ;; :jolt/native, so a project without the build still loads and
  ;; `joltc.core/available?` says whether physics will work.
  :aliases {:test {:extra-paths ["test"]}
+           :examples {:extra-paths ["examples"]}
            ;; regenerate the bindings from the checkout the build made
            :gen {:extra-deps {io.github.noonian/jolt-bindgen {:git/sha "d59eefe0286979979e11d83d6becff78af95c298"}}
                  :main-opts ["-m" "noonian.jolt.bindgen.main" "gen/manifest.edn"]}}

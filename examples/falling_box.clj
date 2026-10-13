@@ -64,12 +64,13 @@
           floor (add-box [50.0 0.5 50.0] [0.0 -0.5 0.0] j/JPH_MotionType_Static layer-static 1)
           box (add-box [0.5 0.5 0.5] [0.0 5.0 0.0] j/JPH_MotionType_Dynamic layer-moving 2)
 
-          ;; the shim: a contact buffer on the system, and room to read into
+          ;; the shim: a contact buffer on the system, and room to read into,
+          ;; four bytes to each id, int and float
           contacts (shim/joltc_shim_contacts_create system max-contacts)
           ids (ffi/alloc arena (* 4 max-bodies))
-          transforms (ffi/alloc arena (* 4 7 max-bodies))
-          c-ints (ffi/alloc arena (* 4 5 max-contacts))
-          c-floats (ffi/alloc arena (* 4 7 max-contacts))]
+          transforms (ffi/alloc arena (* 4 shim/transform-floats max-bodies))
+          c-ints (ffi/alloc arena (* 4 shim/contact-ints max-contacts))
+          c-floats (ffi/alloc arena (* 4 shim/contact-floats max-contacts))]
       (try
         (dotimes [tick 120]
           (let [err (j/JPH_PhysicsSystem_Update system (/ 1.0 60.0) 1 jobs)]
@@ -79,23 +80,25 @@
           (let [n (shim/joltc_shim_read_transforms system ids transforms max-bodies)]
             (when (and (pos? n) (zero? (mod tick 20)))
               (let [id (unsigned (aget (ffi/read-array ids :uint32 n) 0))
-                    [px py pz] (ffi/read-array transforms :float 7)]
+                    [px py pz] (ffi/read-array transforms :float shim/transform-floats)]
                 (println (format "tick %3d  body %d at (%.2f %.2f %.2f)" tick id px py pz)))))
 
           ;; what touched and what parted during that update
           (let [n (shim/joltc_shim_contacts_drain contacts c-ints c-floats max-contacts)]
             (when (pos? n)
-              (let [is (ffi/read-array c-ints :uint32 (* 5 n))
-                    fs (ffi/read-array c-floats :float (* 7 n))]
-                (dotimes [i n]
-                  (let [at (fn [k] (unsigned (aget is (+ k (* 5 i)))))
-                        f (fn [k] (aget fs (+ k (* 7 i))))]
-                    (if (= 1 (at 0))
-                      (println (format "tick %3d  added: bodies %d and %d, user data %d and %d, normal (%.1f %.1f %.1f), depth %.3f"
-                                       tick (at 1) (at 2) (at 3) (at 4) (f 0) (f 1) (f 2) (f 6)))
-                      ;; a removed event names the pair and nothing else; a
-                      ;; body falling asleep ends its contacts too
-                      (println (format "tick %3d  removed: bodies %d and %d" tick (at 1) (at 2)))))))))
+              ;; two flat buffers, n events in each: cut them into one row of
+              ;; ints and one row of floats per event
+              (let [ints (partition shim/contact-ints
+                                    (map unsigned (ffi/read-array c-ints :uint32 (* shim/contact-ints n))))
+                    floats (partition shim/contact-floats
+                                      (ffi/read-array c-floats :float (* shim/contact-floats n)))]
+                (doseq [[[type body1 body2 user1 user2] [nx ny nz _px _py _pz depth]] (map vector ints floats)]
+                  (if (= shim/contact-added type)
+                    (println (format "tick %3d  added: bodies %d and %d, user data %d and %d, normal (%.1f %.1f %.1f), depth %.3f"
+                                     tick body1 body2 user1 user2 nx ny nz depth))
+                    ;; a removed event names the pair and nothing else; a
+                    ;; body falling asleep ends its contacts too
+                    (println (format "tick %3d  removed: bodies %d and %d" tick body1 body2)))))))
           (let [dropped (shim/joltc_shim_contacts_dropped contacts)]
             (when (pos? dropped) (println "dropped" dropped "contacts: raise max-contacts"))))
         (finally

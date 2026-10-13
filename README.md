@@ -145,10 +145,11 @@ and everything destroyed in order. Its middle is the per-frame shape:
 (let [n (shim/joltc_shim_read_transforms system ids transforms max-bodies)]
   ;; ids: n body ids; transforms: 7 floats each, px py pz qx qy qz qw
   (ffi/read-array ids :uint32 n)
-  (ffi/read-array transforms :float (* 7 n)))
+  (ffi/read-array transforms :float (* shim/transform-floats n)))
 
 (let [n (shim/joltc_shim_contacts_drain contacts c-ints c-floats 256)]
-  ;; c-ints: 5 per event; c-floats: 7 per event
+  ;; shim/contact-ints (5) of c-ints and shim/contact-floats (7) of c-floats
+  ;; to each event
   ...)
 ```
 
@@ -245,7 +246,7 @@ These are for the thread that steps the system, between updates.
 | `joltc_shim_contacts_destroy [system contacts]` | Takes the listener off and frees the buffer. Before the system is destroyed. |
 | `joltc_shim_version []` | The version of this contract, which goes up when a layout or a signature changes. `joltc.shim/available?` checks it. |
 
-A drained event is five `int32` and seven `float`:
+A drained event is five `int32` and seven `float`, which `joltc.shim` names `contact-ints` and `contact-floats` (and `transform-floats` for the seven of a transform, `contact-added` and `contact-removed` for the two types):
 
 | `ints` | | `floats` | |
 |---|---|---|---|

@@ -28,6 +28,21 @@
 ;; each with 0xFFFFFFFF, since a body id keeps a sequence number in its top
 ;; bits and reads back negative from an int-array otherwise.
 
+(def transform-floats
+  "Floats per body in a transform buffer: px py pz qx qy qz qw."
+  7)
+
+(def contact-ints
+  "Ints per event in a drained int buffer: type, body1, body2, user1, user2."
+  5)
+
+(def contact-floats
+  "Floats per event in a drained float buffer: nx ny nz, px py pz, depth."
+  7)
+
+(def contact-added "The type of an event for a contact that began." 1)
+(def contact-removed "The type of an event for a contact that ended." 2)
+
 (ffi/defcfn joltc_shim_version
   "[] -> n. The version of the shim's contract, which goes up when one of
   its layouts or signatures changes."

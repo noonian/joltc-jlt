@@ -40,7 +40,8 @@ checkout for rebuilds and for regenerating the binding.
 ```sh
 jolt native                       # git, cmake and a C++ compiler; a few minutes the first time
 jolt test                         # the struct layouts against what the C compiler measured
-jolt -A:examples -m falling-box   # a box dropped on a floor
+jolt -A:examples -m falling-box   # a box dropped on a floor, printed
+jolt -A:raylib -m falling-boxes   # boxes tumbling in a window; needs raylib 6.0 installed
 ```
 
 `JOLTC_REPO` and `JOLTC_SHA` point the build at another joltc, and `CC` at
@@ -159,6 +160,19 @@ tick  40  body 8388609 at (0.00 2.68 0.00)
 tick  58  added: bodies 8388608 and 8388609, user data 1 and 2, normal (-0.0 1.0 -0.0), depth 0.086
 tick  80  body 8388609 at (-0.00 0.48 0.00)
 tick  90  removed: bodies 8388608 and 8388609
+```
+
+That one prints and draws nothing, since this library is only the physics.
+[`examples/falling_boxes.clj`](examples/falling_boxes.clj) is the same world
+with a window on it: a dozen boxes tumbling onto the floor, drawn with
+[raylib-jlt](https://github.com/jlt-commons/raylib-jlt), each turning gold for
+a moment when the contact buffer says it hit something. SPACE drops another.
+It reads every box's transform with one `joltc_shim_read_body_transforms`
+call a frame. raylib-jlt binds the system's raylib, so install that first
+(`brew install raylib`); it is a dependency of the `:raylib` alias alone.
+
+```sh
+jolt -A:raylib -m falling-boxes
 ```
 
 ## The shim

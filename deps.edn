@@ -18,6 +18,13 @@
                 :linux ["native/lib/libjoltc_shim.so"]}]
  :aliases {:test {:extra-paths ["test"]}
            :examples {:extra-paths ["examples"]}
+           ;; the example with a window: raylib-jlt binds the system's
+           ;; libraylib 6.0 (`brew install raylib`), which is why it is an
+           ;; alias of its own and not something :examples needs
+           :raylib {:extra-paths ["examples"]
+                    :extra-deps {net.b12n/raylib {:git/url "https://github.com/jlt-commons/raylib-jlt.git"
+                                                  :git/sha "ffd97a91727b02c8f2a5ee2c194bfb64d10c2d4a"
+                                                  :deps/root "lib"}}}
            ;; regenerate the bindings from the checkout the build made
            :gen {:extra-deps {io.github.noonian/jolt-bindgen {:git/sha "d59eefe0286979979e11d83d6becff78af95c298"}}
                  :main-opts ["-m" "noonian.jolt.bindgen.main" "gen/manifest.edn"]}}

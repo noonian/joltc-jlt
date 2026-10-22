@@ -26,7 +26,7 @@
                                                   :git/sha "ffd97a91727b02c8f2a5ee2c194bfb64d10c2d4a"
                                                   :deps/root "lib"}}}
            ;; regenerate the bindings from the checkout the build made
-           :gen {:extra-deps {io.github.noonian/jolt-bindgen {:git/sha "d59eefe0286979979e11d83d6becff78af95c298"}}
+           :gen {:extra-deps {io.github.noonian/jolt-bindgen {:git/sha "ee52050696e7d6e1be131d440fac898d283d07f0"}}
                  :main-opts ["-m" "noonian.jolt.bindgen.main" "gen/manifest.edn"]}}
  :tasks {native "sh native/build.sh"
          test "jolt -A:test -e \"(require 'joltc.layout-test 'clojure.test) (clojure.test/run-tests 'joltc.layout-test)\""}}

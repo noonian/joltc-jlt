@@ -229,22 +229,23 @@ and two struct reads for each body. `joltc_shim_read_transforms` asks the
 engine for its active bodies and writes all of their ids and transforms into two
 flat arrays in one call.
 
-Measured with 1000 awake bodies (an M1 Pro, jolt runtime 0.8.20):
+Measured with 1000 awake bodies (an AMD Ryzen 7 9800X3D under Linux, jolt
+runtime 0.8.23, 2026-10-21):
 
 | | per frame |
 |---|---|
-| the shim's one call | 7 µs |
-| 1000 `GetPositionAndRotation` calls | 43 µs |
-| the shim's call, with both arrays copied out by `ffi/read-array` | 1.0 ms |
-| per body, each struct copied out by `ffi/read-array` | 1.3 ms |
-| per body, each struct read as a map by `ffi/read` | 2.8 ms |
+| the shim's one call | 6 µs |
+| the shim's call, with both arrays copied out by `ffi/read-array` | 13 µs |
+| the shim's call, into arrays kept from frame to frame by `ffi/read-into!` | 12 µs |
+| 1000 calls through gameth's `body-transform` (`GetPositionAndRotation` and two struct reads, a map each) | 0.49 ms |
 
-So the call itself is six times cheaper, and the frame as a whole 1.3 to
-2.8 times cheaper, because getting floats out of foreign memory costs far
-more than either way of putting them there. This half of the shim is a
-convenience with a modest saving: one call, one layout, and it tells you
-which bodies are awake. The contacts half is the one a program cannot do
-without.
+The copies were the price until jolt 0.8.22: on an M1 Pro with 0.8.20,
+`ffi/read-array` went element by element, and the shim's call with both
+arrays copied out was 1.0 ms against 1.3 ms for the structs read one body
+at a time, so the shim saved little. With typed copies the arrays cost
+what the call does, and the shim is forty times cheaper than reading the
+bodies one by one. The contacts half is the one a program cannot do
+without either way.
 
 ### What it gives
 

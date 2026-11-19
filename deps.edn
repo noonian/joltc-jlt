@@ -1,21 +1,25 @@
 {:paths ["src"]
- ;; the oldest jolt runtime this works on: 0.8.4 is where a dependency's
- ;; relative :jolt/native path began to resolve against its own deps.edn,
- ;; which is how a project that depends on this one finds the libraries
- :jolt/min-version "0.8.4"
- ;; libjoltc and the shim are built by `jolt native` (native/build.sh, which
- ;; fetches joltc at a pinned commit; nothing third-party is committed here).
- ;; The paths are relative to this file, for a project that depends on this
- ;; one too. :optional, so a project without the build still loads and
- ;; `joltc.shim/available?` says whether physics will work. No :windows
- ;; candidates: the build does not make them, and without the key the
- ;; platform's own search for joltc.dll and joltc_shim.dll is what is tried.
- :jolt/native [{:name "joltc" :optional true
-                :darwin ["native/lib/libjoltc.dylib"]
-                :linux ["native/lib/libjoltc.so"]}
-               {:name "joltc_shim" :optional true
-                :darwin ["native/lib/libjoltc_shim.dylib"]
-                :linux ["native/lib/libjoltc_shim.so"]}]
+ ;; the oldest jolt runtime this works on: 0.8.26 is where a dependency's
+ ;; :jolt/native spec can name the task that builds it, which is how a
+ ;; project that depends on this one gets the libraries built (0.8.4 began
+ ;; resolving a dependency's relative paths against its own deps.edn)
+ :jolt/min-version "0.8.26"
+ ;; libjoltc and the shim are built by the `native` task (native/build.sh,
+ ;; which fetches joltc at a pinned commit; nothing third-party is
+ ;; committed here). jolt runs it in this library's checkout the first time
+ ;; a project requires one of its namespaces and the libraries are not
+ ;; there, once for both, then opens them. The relative paths resolve
+ ;; against this file, for a project that depends on this one too; the bare
+ ;; names are for a shipped game, which carries the libraries beside its
+ ;; binary. No :windows candidates: the build does not make them, and
+ ;; without the key the platform's own search for joltc.dll and
+ ;; joltc_shim.dll is what is tried.
+ :jolt/native [{:name "joltc" :build "native"
+                :darwin ["native/lib/libjoltc.dylib" "libjoltc.dylib"]
+                :linux ["native/lib/libjoltc.so" "libjoltc.so"]}
+               {:name "joltc_shim" :build "native"
+                :darwin ["native/lib/libjoltc_shim.dylib" "libjoltc_shim.dylib"]
+                :linux ["native/lib/libjoltc_shim.so" "libjoltc_shim.so"]}]
  :aliases {:test {:extra-paths ["test"]}
            :examples {:extra-paths ["examples"]}
            ;; the example with a window: raylib-jlt binds the system's

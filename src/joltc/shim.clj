@@ -4,10 +4,11 @@
   Two libraries, both built by the `native` task (native/build.sh) into
   native/lib: libjoltc, which is joltc (the C API over Jolt Physics), and
   libjoltc_shim, this library's own C (native/joltc_shim.c). deps.edn
-  declares both under :jolt/native as :optional, so the runtime loads
-  them at startup when they have been built and a project without the
-  build still loads; `available?` says which. The generated binding is
-  `joltc.ffi`.
+  declares both under :jolt/native with that task as their :build, so jolt
+  builds them in this library's checkout if they are missing and opens
+  them before this library's namespaces load. `available?` says whether
+  the shim that was built is the version this source expects. The
+  generated binding is `joltc.ffi`.
 
   The shim exists because a frame loop needs two things the binding alone
   does not give it. Contacts: Jolt Physics reports them from its worker
@@ -107,18 +108,19 @@
 
 (defn load-libraries!
   "Throw unless the native libraries are loaded, saying what to do about
-  it. The runtime loaded them at startup if they were built, so there is
-  nothing to load here; the name is from when there was."
+  it. jolt built and opened them before this namespace loaded, so there
+  is nothing to load here; the name is from when there was."
   []
   (let [v (loaded-shim-version)]
     (cond
       (nil? v)
-      (throw (ex-info (str "joltc: the native libraries are not built. Run the `native` task in the "
-                           "joltc-jlt checkout (for a git dependency, `jolt path` shows where it is) "
-                           "and start again: they are loaded at startup.")
+      (throw (ex-info (str "joltc: the native libraries are not loaded. jolt builds them with the "
+                           "`native` task when they are missing, unless JOLT_NATIVE_BUILD=0; run it "
+                           "in the joltc-jlt checkout (`jolt path` shows where it is) and start again.")
                       {}))
       (not= v shim-version)
       (throw (ex-info (str "joltc: the built shim is version " v " and this source expects " shim-version
-                           ". Run the `native` task in the joltc-jlt checkout again.")
+                           ". jolt builds only a missing library: run the `native` task in the "
+                           "joltc-jlt checkout again.")
                       {:built v :expected shim-version}))
       :else true)))

@@ -21,7 +21,7 @@ Three parts:
   that the binding alone does not give it on this runtime: contact events,
   and every moving body's transform in one call. [The shim](#the-shim)
   below says why and what it costs. `joltc.shim/available?` says whether
-  the native build is there.
+  the shim that was built is the one this source expects.
 - The native build: `native/build.sh` and the `:jolt/native` declaration
   in `deps.edn` that tells the runtime where its output is.
 
@@ -32,13 +32,13 @@ what the functions do.
 
 ## Building
 
-Nothing third-party is committed here. `jolt native` fetches joltc at the
+Nothing third-party is committed here. The `native` task fetches joltc at the
 commit pinned in `native/build.sh` (joltc fetches Jolt Physics itself
 through CMake), builds `libjoltc` and the shim into `native/lib`, and keeps the
 checkout for rebuilds and for regenerating the binding.
 
 ```sh
-jolt native                       # git, cmake and a C++ compiler; a few minutes the first time
+jolt native                       # by hand: git, cmake and a C++ compiler; a few minutes the first time
 jolt test                         # the struct layouts against what the C compiler measured
 jolt -A:examples -m falling-box   # a box dropped on a floor, printed
 jolt -A:raylib -m falling-boxes   # boxes tumbling in a window; needs raylib 6.0 installed
@@ -66,64 +66,60 @@ it loads.
 
 ## Using it
 
-**Clone it and build it yourself.** There is no other practical way to
-consume this library today. It is not just source: it works only after
-its native build has run, and the runtime has no prep step that would run
-a dependency's build for you. So the way to depend on it is a checkout of
-your own, built once, and named by path:
-
-```sh
-git clone https://github.com/noonian/joltc-jlt
-cd joltc-jlt && jolt native
-```
+**Depend on it like any other library.** It is not just source: it works
+only after its native build has run. Since jolt 0.8.26 a dependency's
+`:jolt/native` spec can name the task that builds it, and this one does,
+so jolt runs that build itself, in the checkout it resolved, the first
+time your project requires a `joltc` namespace:
 
 ```clojure
-;; your project's deps.edn, with the checkout beside it
+;; your project's deps.edn: a git dependency
+{:deps {io.github.noonian/joltc-jlt {:git/sha "<commit sha>"}}}
+;; or a checkout of your own beside it
 {:deps {io.github.noonian/joltc-jlt {:local/root "../joltc-jlt"}}}
 ```
 
-A git dependency (`{:git/sha "<commit sha>"}`) does resolve, and your
-project starts, but with `(joltc.shim/available?)` false: the runtime
-fetched the source into its cache and nothing built it. You can build it
-there (`jolt path` in your project prints the checkout, under
-`~/.jolt/gitlibs/`, and `jolt native` in the directory above its `src`
-does the build), but that is a build inside a cache, once per pinned sha
-and again on every machine. A checkout of your own is the honest
-arrangement until the runtime can build a dependency's natives.
+The first require prints `jolt: building native library joltc (task native
+in ...)` on stderr and takes a few minutes; a git dependency is built once
+per pinned sha on a machine, in `~/.jolt/gitlibs/`, and shared by every
+project that pins it. It needs git, cmake and a C++ compiler; without
+them the require fails, naming the task and where it ran.
+`JOLT_NATIVE_BUILD=0` turns the build off, and the error then names the
+task that would build it.
 
 ### How the libraries are found
 
 This project's `deps.edn` declares both libraries under `:jolt/native`,
-by path relative to itself:
+by path relative to itself, with the task that builds them:
 
 ```clojure
-:jolt/native [{:name "joltc" :optional true
-               :darwin ["native/lib/libjoltc.dylib"]
-               :linux ["native/lib/libjoltc.so"]}
-              {:name "joltc_shim" :optional true
-               :darwin ["native/lib/libjoltc_shim.dylib"]
-               :linux ["native/lib/libjoltc_shim.so"]}]
+:jolt/native [{:name "joltc" :build "native"
+               :darwin ["native/lib/libjoltc.dylib" "libjoltc.dylib"]
+               :linux ["native/lib/libjoltc.so" "libjoltc.so"]}
+              {:name "joltc_shim" :build "native"
+               :darwin ["native/lib/libjoltc_shim.dylib" "libjoltc_shim.dylib"]
+               :linux ["native/lib/libjoltc_shim.so" "libjoltc_shim.so"]}]
 ```
 
-The runtime resolves those paths against the `deps.edn` that wrote them,
-so they hold for a project that depends on this one, and it loads the
-libraries at startup, before any namespace, so there is no loader to
-call. That needs the jolt runtime at 0.8.4 or later, which `deps.edn`
-declares as `:jolt/min-version`, so an older runtime refuses to load the
-project instead of failing to find the libraries.
+The runtime resolves the relative paths against the `deps.edn` that wrote
+them, so they hold for a project that depends on this one, and it opens
+the libraries on the first require of one of this library's namespaces,
+before that namespace's code runs, so there is no loader to call. That
+needs jolt 0.8.26 or later, which `deps.edn` declares as
+`:jolt/min-version`, so an older runtime refuses to load the project
+instead of failing to find the libraries.
 
-- **They are `:optional`.** A project that depends on this one starts
-  without the build, and `(joltc.shim/available?)` says whether physics
-  will work. `(joltc.shim/load-libraries!)` throws with what to do when it
-  will not.
-- **They load at startup**, so after a first `jolt native` a running REPL
-  has to be started again.
+- **They are built when missing, not when stale.** jolt runs the task
+  only when a library is not there. After changing `native/` in a
+  checkout of your own, run `jolt native` in it again;
+  `(joltc.shim/load-libraries!)` throws, naming the versions, when the
+  shim that was built is not the one this source expects, and
+  `(joltc.shim/available?)` says the same without throwing.
+- **The bare names** are for a shipped program, which carries the
+  libraries beside its binary and is started from that directory.
 - **To use a build somewhere else**, declare the same two `:name`s in your
   own project's `deps.edn` with your own paths. A project's declaration
   wins over a dependency's.
-- **A standalone binary** made by `jolt build` looks for
-  `native/lib/libjoltc.dylib` and its neighbour relative to the directory
-  it is run from, so ship that directory beside it.
 
 ### An example
 
